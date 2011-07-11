@@ -1,8 +1,8 @@
 
-main: main.o 
-	g++ main.o -o main
+CC=g++
+CPPFLAGS=-Wall
 
-main.o:
+main:
 
 .PHONY: clean
 clean:
