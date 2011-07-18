@@ -1,16 +1,8 @@
-/*
- *  V4L2 video capture example
- *
- *  This program can be used and distributed without restrictions.
- */
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
-
 #include <getopt.h>             /* getopt_long() */
-
 #include <fcntl.h>              /* low-level i/o */
 #include <unistd.h>
 #include <errno.h>
@@ -20,29 +12,21 @@
 #include <sys/time.h>
 #include <sys/mman.h>
 #include <sys/ioctl.h>
-
 #include <asm/types.h>          /* for videodev2.h */
-
 #include <linux/videodev2.h>
-
-#include <directfb.h>
-
 #include <libv4lconvert.h>
+#include <signal.h>
+#include "display.h"
 
 static struct v4lconvert_data *v4lconvert_data;
 static struct v4l2_format src_fmt;	/* raw format */
 static struct v4l2_format fmt;		/* directfb format */
-static unsigned char *dst_buf;
-
-#define PIXEL_ARGB(a,r,g,b) 	\
-		((a & 0xff ) << 24) |	\
-		((r & 0xff ) << 16) | 	\
-		((g & 0xff ) << 8)  |	\
-		(b & 0xff ) 			\
-
-#define PIXEL_RGB32 PIXEL_ARGB
+static __u8* dst_buf;
 
 #define CLEAR(x) memset (&(x), 0, sizeof (x))
+
+#define VIDEO_WIDTH	640
+#define VIDEO_HEIGHT	480
 
 typedef enum {
 	IO_METHOD_READ,
@@ -51,45 +35,18 @@ typedef enum {
 } io_method;
 
 struct buffer {
-	void *                  start;
-	size_t                  length;
+	void* start;
+	size_t length;
 };
 
-static int				alive = 1;
-static char *           dev_name        = NULL;
+static int 		alive 		= 1;
+static char*		dev_name        = NULL;
 static io_method	io		= IO_METHOD_MMAP;
-static int              fd              = -1;
-struct buffer *         buffers         = NULL;
-static unsigned int     n_buffers       = 0;
+static int		fd              = -1;
+struct buffer*		buffers		= NULL;
+static unsigned int	n_buffers 	= 0;
 
-static IDirectFB             *dfb = NULL;
-static IDirectFBSurface      *surface = NULL;
-static IDirectFBDisplayLayer      *layer= NULL;
-
-static void
-close_directfb ()
-{
-	if (surface)
-		surface->Release(surface);
-	if (layer)
-		layer->Release(layer);
-}
-
-static void
-open_directfb(	int* argc, char*** argv )
-{
-	DirectFBInit( argc, argv );
-	DirectFBCreate( &dfb );
-
-	dfb->SetCooperativeLevel(dfb, DFSCL_EXCLUSIVE);
-
-	dfb->GetDisplayLayer(dfb, DLID_PRIMARY, &layer);
-
-	layer->GetSurface(layer, &surface);
-}
-
-	static void
-errno_exit                      (const char *           s)
+static void errno_exit(const char* s)
 {
 	fprintf (stderr, "%s error %d, %s\n",
 			s, errno, strerror (errno));
@@ -97,10 +54,7 @@ errno_exit                      (const char *           s)
 	exit (EXIT_FAILURE);
 }
 
-	static int
-xioctl                          (int                    fd,
-		int                    request,
-		void *                 arg)
+static int xioctl(int fd, int request, void* arg)
 {
 	int r;
 
@@ -110,16 +64,8 @@ xioctl                          (int                    fd,
 	return r;
 }
 
-static void
-process_image (unsigned char* p, size_t length)
+static void process_image (__u8* p, size_t length)
 {
-	DFBResult ret;
-	size_t i,j;
-	void* data;
-	int pitch;
-	int width,height;
-	DFBSurfacePixelFormat  format;
-
 	if (v4lconvert_convert(v4lconvert_data,
 				&src_fmt,
 				&fmt,
@@ -131,46 +77,10 @@ process_image (unsigned char* p, size_t length)
 		return;
 	}
 
-	p = dst_buf;
-	length = fmt.fmt.pix.sizeimage;
-
-	/* Retrieve the width and height. */
-	surface->GetSize( surface, &width, &height );
-	surface->GetPixelFormat( surface, &format );
-
-	if (format != DSPF_RGB32) {
-		printf("invalid dfb pixel format!\n");
-		return;	
-	}
-
-	/* Lock the surface's data for direct write access. */
-	ret = surface->Lock( surface, DSLF_WRITE, &data, &pitch );
-	if (ret) {
-		DirectFBError( "IDirectFBSurface::Lock() failed", ret );
-		return;
-	}
-
-	for (j=0; j<height; j++) {
-		__u32 *dst = (__u32*)((__u8*)data + j * pitch);
-
-		for (i=0; i<width; i++) {
-
-			// Set pixel with no alpha (a=255)
-			dst[i] = PIXEL_RGB32(0xff, p[0], p[1], p[2]);
-
-			p+=3;
-		}
-	}
-
-	/* Unlock the surface's data. */
-	surface->Unlock( surface );
-
-	/* Flip the surface to display the new frame. */
-	surface->Flip( surface, NULL, 0 );
+	refresh_display(dst_buf, fmt.fmt.pix.sizeimage);
 }
 
-	static int
-read_frame			(void)
+static int read_frame(void)
 {
 	struct v4l2_buffer buf;
 	unsigned int i;
@@ -262,8 +172,7 @@ read_frame			(void)
 	return 1;
 }
 
-	static void
-mainloop                        (void)
+static void mainloop(void)
 {
 	while (alive) {
 		for (;;) {
@@ -274,7 +183,7 @@ mainloop                        (void)
 			FD_ZERO (&fds);
 			FD_SET (fd, &fds);
 
-			/* Timeout. */
+			// Timeout. 
 			tv.tv_sec = 2;
 			tv.tv_usec = 0;
 
@@ -291,17 +200,16 @@ mainloop                        (void)
 				fprintf (stderr, "select timeout\n");
 				exit (EXIT_FAILURE);
 			}
-
+	
 			if (read_frame ())
 				break;
 
-			/* EAGAIN - continue select loop. */
+			// EAGAIN - continue select loop. 
 		}
 	}
 }
 
-	static void
-stop_capturing                  (void)
+static void stop_capturing(void)
 {
 	enum v4l2_buf_type type;
 
@@ -321,8 +229,7 @@ stop_capturing                  (void)
 	}
 }
 
-	static void
-start_capturing                 (void)
+static void start_capturing(void)
 {
 	unsigned int i;
 	enum v4l2_buf_type type;
@@ -378,8 +285,7 @@ start_capturing                 (void)
 	}
 }
 
-	static void
-uninit_device                   (void)
+static void uninit_device(void)
 {
 	unsigned int i;
 
@@ -403,8 +309,7 @@ uninit_device                   (void)
 	free (buffers);
 }
 
-	static void
-init_read			(unsigned int		buffer_size)
+static void init_read(unsigned int buffer_size)
 {
 	buffers = calloc (1, sizeof (*buffers));
 
@@ -422,8 +327,7 @@ init_read			(unsigned int		buffer_size)
 	}
 }
 
-	static void
-init_mmap			(void)
+static void init_mmap(void)
 {
 	struct v4l2_requestbuffers req;
 
@@ -481,8 +385,7 @@ init_mmap			(void)
 	}
 }
 
-	static void
-init_userp			(unsigned int		buffer_size)
+static void init_userp(unsigned int buffer_size)
 {
 	struct v4l2_requestbuffers req;
 	unsigned int page_size;
@@ -525,8 +428,7 @@ init_userp			(unsigned int		buffer_size)
 	}
 }
 
-	static void
-init_device                     (void)
+static void init_device(void)
 {
 	struct v4l2_capability cap;
 	struct v4l2_cropcap cropcap;
@@ -573,7 +475,6 @@ init_device                     (void)
 
 	/* Select video input, video standard and tune here. */
 
-
 	CLEAR (cropcap);
 
 	cropcap.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
@@ -596,12 +497,11 @@ init_device                     (void)
 		/* Errors ignored. */
 	}
 
-
 	CLEAR (fmt);
 
 	fmt.type                = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-	fmt.fmt.pix.width       = 640; 
-	fmt.fmt.pix.height      = 480;
+	fmt.fmt.pix.width       = VIDEO_WIDTH; 
+	fmt.fmt.pix.height      = VIDEO_HEIGHT;
 	fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_RGB32;
 	fmt.fmt.pix.field       = V4L2_FIELD_INTERLACED;
 
@@ -634,16 +534,6 @@ init_device                     (void)
 	printf("sizeimage %d\n", fmt.fmt.pix.sizeimage);
 	printf("bytesperline %d\n", fmt.fmt.pix.bytesperline);
 
-	/* Buggy driver paranoia. */
-	/*
-	min = fmt.fmt.pix.width * 2;
-	if (fmt.fmt.pix.bytesperline < min)
-		fmt.fmt.pix.bytesperline = min;
-	min = fmt.fmt.pix.bytesperline * fmt.fmt.pix.height;
-	if (fmt.fmt.pix.sizeimage < min)
-		fmt.fmt.pix.sizeimage = min;
-	*/
-
 	switch (io) {
 		case IO_METHOD_READ:
 			init_read (fmt.fmt.pix.sizeimage);
@@ -659,8 +549,7 @@ init_device                     (void)
 	}
 }
 
-static
-void close_device(void)
+static void close_device(void)
 {
 	if (-1 == close (fd))
 		errno_exit ("close");
@@ -668,8 +557,7 @@ void close_device(void)
 	fd = -1;
 }
 
-static 
-void open_device(void)
+static void open_device(void)
 {
 	struct stat st; 
 
@@ -705,7 +593,7 @@ void handler(int sig)
 
 	close_device();
 
-	close_directfb();
+	close_display();
 
 	signal(SIGINT, SIG_DFL);
 
@@ -716,19 +604,23 @@ int main (int argc, char** argv)
 {
 	dev_name = "/dev/video0";
 
-	io = IO_METHOD_READ;
+	io = IO_METHOD_MMAP;
 
-	open_directfb(&argc, &argv);
+	open_display(VIDEO_WIDTH, VIDEO_HEIGHT);
 
+	printf("Opening device\n");
 	open_device();
 
+	printf("Initing device\n");
 	init_device();
 
+	printf("Starting capture\n");
 	start_capturing();
 
 	signal(SIGINT, handler);
 
 	// Code will never leave this call
+	printf("Mainloop...\n");
 	mainloop();
 
 	return 0;
