@@ -12,27 +12,11 @@ static Window window;
 static int width = 0;
 static int height = 0;
 
-int wait_for_event()
-{
-	XEvent ev;
-
-	printf("Waiting X11 event ... \n");
-
-	XNextEvent(display, &ev);
-
-	switch (ev.type) {	
-		case Expose:
-			printf("Expose event received...\n");
-	}
-
-	return 0;
-}
-
 int refresh_display(__u8* p, size_t length)
 {
 	ximage = XCreateImage(display, visual, 24, ZPixmap, 0, (char*)p, width, height, 32, 0);
 
-	XPutImage(display, window, DefaultGC(display, 0), ximage, 0, 0, 0, 0, width, height);
+	XPutImage(display, window, DefaultGC(display, 0), ximage, 0, 0, 10, 10, width, height);
 
 	return 0;
 }

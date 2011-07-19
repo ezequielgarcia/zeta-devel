@@ -431,6 +431,7 @@ static void init_userp(unsigned int buffer_size)
 static void init_device(void)
 {
 	struct v4l2_capability cap;
+	struct v4l2_input input;
 	struct v4l2_cropcap cropcap;
 	struct v4l2_crop crop;
 	int ret;
@@ -475,6 +476,30 @@ static void init_device(void)
 
 	/* Select video input, video standard and tune here. */
 
+	CLEAR (input);
+	if (0 == xioctl (fd, VIDIOC_G_INPUT, &input.index)) {
+
+		if (0 == xioctl (fd, VIDIOC_ENUMINPUT, &input)) {
+
+			if (-1 == (input.std & V4L2_STD_PAL_Nc)) {
+				fprintf (stderr, "%s does not support PAL_Nc standard\n",
+						dev_name);
+				exit (EXIT_FAILURE);
+			}
+			else {
+
+				v4l2_std_id std_id = V4L2_STD_PAL_Nc;
+
+				if (-1 == xioctl (fd, VIDIOC_S_STD, &std_id)) {
+					errno_exit ("VIDIOC_S_STD");
+				}
+			}
+		}
+	}
+	else {
+		errno_exit ("VIDIOC_G_INPUT");
+	}
+
 	CLEAR (cropcap);
 
 	cropcap.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
@@ -502,7 +527,7 @@ static void init_device(void)
 	fmt.type                = V4L2_BUF_TYPE_VIDEO_CAPTURE;
 	fmt.fmt.pix.width       = VIDEO_WIDTH; 
 	fmt.fmt.pix.height      = VIDEO_HEIGHT;
-	fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_RGB32;
+	fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_BGR32;
 	fmt.fmt.pix.field       = V4L2_FIELD_INTERLACED;
 
 	v4lconvert_data = v4lconvert_create(fd);
@@ -551,7 +576,7 @@ static void init_device(void)
 
 static void close_device(void)
 {
-	if (-1 == close (fd))
+	if (close(fd) < 0)
 		errno_exit ("close");
 
 	fd = -1;
@@ -561,7 +586,7 @@ static void open_device(void)
 {
 	struct stat st; 
 
-	if (-1 == stat (dev_name, &st)) {
+	if (stat (dev_name, &st) < 0) {
 		fprintf (stderr, "Cannot identify '%s': %d, %s\n",
 				dev_name, errno, strerror (errno));
 		exit (EXIT_FAILURE);
@@ -574,7 +599,7 @@ static void open_device(void)
 
 	fd = open (dev_name, O_RDWR /* required */ | O_NONBLOCK, 0);
 
-	if (-1 == fd) {
+	if (fd < 0) {
 		fprintf (stderr, "Cannot open '%s': %d, %s\n",
 				dev_name, errno, strerror (errno));
 		exit (EXIT_FAILURE);
