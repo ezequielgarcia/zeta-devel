@@ -1,6 +1,7 @@
 
 #include <termios.h>
 #include <fcntl.h>
+#include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -35,7 +36,7 @@ int main(int argc, char* argv[])
 		exit(EXIT_FAILURE);
 	}
 
-	printf("TTY '%s' opened OK\n", tty_name(fd));	
+	printf("TTY '%s' opened OK\n", ttyname(fd));	
 
 	if (tcgetattr(fd, &config) < 0) {
 		printf("Cant get terminal attributes\n");
@@ -107,11 +108,11 @@ int main(int argc, char* argv[])
 		if (read(fd,&buffer,1) > 0) {
 	
 			count++;
-			printf("%hhx ", (unsigned char)buffer);
+			printf("%hhx ", (unsigned char)buffer[0]);
 
 			if (count == 16) {
 				printf("\n");
-				count = 0
+				count = 0;
 			}
 		}
 		else {
