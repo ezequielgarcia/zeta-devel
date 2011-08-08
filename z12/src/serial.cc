@@ -27,11 +27,10 @@ bool Serial::Open()
 	struct termios config;
 
 	/**
-	 * O_RDWR: Opens the port for read only
+	 * O_RDONLY: Opens the port for read only
 	 * O_NOCTTY: The port never becomes the controlling terminal of the process.
-	 * O_NDELAY: Use non-blocking I/O. On some systems this also means the RS232 DCD signal line is ignored.
 	 */
-	_fd = open(_strDevicePath.c_str(), O_RDONLY | O_NOCTTY | O_NDELAY);
+	_fd = open(_strDevicePath.c_str(), O_RDONLY | O_NOCTTY );
 	if (_fd == -1) {
 		printf("Failed to open device\n" );
 		return false;

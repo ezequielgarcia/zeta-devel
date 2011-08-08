@@ -6,10 +6,13 @@ int main(int argc, char* argv[])
 {
 	SerialManager manager(argv[1], 1);
 
-	printf("Serial Manager starting...\n");
+	if ( !manager.Start() ) {
+		printf("Serial manager failed to start, exiting...\n");
+		return EXIT_FAILURE;
+	}	
 
-	if ( !manager.Start() )
-		return EXIT_FAILURE;	
+	printf("Serial Manager starting...\n");
+	sleep(1);
 
 	manager.WaitUntilStop();
 

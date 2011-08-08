@@ -33,6 +33,7 @@ void SerialManager::_Run()
 			break;
 		}
 
+		#if 0
 		count++;
 		printf("%hhx ", (unsigned char)buffer[0]);
 
@@ -40,6 +41,9 @@ void SerialManager::_Run()
 			printf("\n");
 			count = 0;
 		}
+		#else
+		printf("%c", (unsigned char)buffer[0]);
+		#endif
 	}
 
 	_clsSerial.Close();
@@ -50,7 +54,7 @@ void SerialManager::_Run()
 bool SerialManager::Start()
 {
 	// try to open serial device
-	if ( !_clsSerial.Open() )
+	if ( !_clsSerial.Open() ) 
 		return false;
 	
 	// if opened OK start the runner

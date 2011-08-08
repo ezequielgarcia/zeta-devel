@@ -9,6 +9,7 @@ enum RUNNER_STATUS {
 	RUNNER_STATUS_STOPPED 	= 0,
 	RUNNER_STATUS_STOPPING 	= 1,
 	RUNNER_STATUS_RUNNING 	= 2,
+	RUNNER_STATUS_DESTROYING = 3,
 };
                              
 class Runner
@@ -39,9 +40,9 @@ private:
 
 	bool			_blnStopping;
 
-    Thread*			_clsThread_p;
+    Thread			_clsThread;
 
-	Semaphore*		_clsSemaphore_p;
+	Semaphore		_clsSemStart;
 };
 
 //
