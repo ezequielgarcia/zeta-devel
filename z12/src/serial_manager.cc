@@ -42,7 +42,8 @@ void SerialManager::_Run()
 			count = 0;
 		}
 		#else
-		printf("%c", (unsigned char)buffer[0]);
+		// printf("%c", buffer[0]);
+		write(0, buffer, 1);
 		#endif
 	}
 
