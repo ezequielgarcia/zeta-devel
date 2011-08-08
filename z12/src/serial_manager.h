@@ -4,6 +4,7 @@
 
 #include "runner.h"
 #include "serial.h"
+#include "safe_buffer.h"
 
 class SerialManager : public Runner {
 
@@ -13,13 +14,15 @@ private:
 
 	Semaphore _sem;
 
+	SafeBuffer& _buffer;
+
 protected: 
 
 	void _Run();
 
 public:
 
-    SerialManager(const string& dev, size_t min_bytes);
+    SerialManager(const string& dev, size_t min_bytes, SafeBuffer& buffer);
 	~SerialManager();
 
 	// We override Runner::Start()

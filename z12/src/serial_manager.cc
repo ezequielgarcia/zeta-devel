@@ -4,8 +4,8 @@
 
 #define BUFF_SIZE 1024
 
-SerialManager::SerialManager(const string& dev, size_t min_bytes)
-	: _clsSerial(dev, min_bytes)
+SerialManager::SerialManager(const string& dev, size_t min_bytes, SafeBuffer& buffer)
+	: _clsSerial(dev, min_bytes), _buffer(buffer)
 {
 }
 
@@ -33,9 +33,9 @@ void SerialManager::_Run()
 			break;
 		}
 
-		#if 0
+		#if 1
 		count++;
-		printf("%hhx ", (unsigned char)buffer[0]);
+		printf("%02hhx ", (unsigned char)buffer[0]);
 
 		if (count == 16) {
 			printf("\n");
@@ -43,8 +43,10 @@ void SerialManager::_Run()
 		}
 		#else
 		// printf("%c", buffer[0]);
-		write(0, buffer, 1);
+		c = write(0, buffer, 1);
 		#endif
+
+		_buffer.Push(buffer[0]);
 	}
 
 	_clsSerial.Close();

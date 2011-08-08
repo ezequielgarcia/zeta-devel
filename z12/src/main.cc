@@ -4,7 +4,9 @@
 
 int main(int argc, char* argv[])
 {
-	SerialManager manager(argv[1], 1);
+	SafeBuffer buffer;
+
+	SerialManager manager(argv[1], 1, buffer);
 
 	if ( !manager.Start() ) {
 		printf("Serial manager failed to start, exiting...\n");
