@@ -16,6 +16,12 @@ void Z12Preprocessor::_BuildMessage()
 	list<unsigned char>::iterator it = _listRaw.begin();
 	unsigned char header[12];
 
+	if (_listRaw.size() < 12) {
+		printf("Discarded!\n");
+		_listRaw.clear();
+		return;
+	}
+
 	for (size_t j=0; j<12; j++) {
 
 		header[j] = *it;	
@@ -33,46 +39,42 @@ void Z12Preprocessor::_BuildMessage()
 		header[4] == 'H' &&
 		header[5] == 'R') {
 
-		;
+		printf("Msg type %c%c%c\n", header[7], header[8], header[9]);
 	}
 	else {
-		printf("Wrong header!\n");
+		printf("!!! ERROR: Wrong header !!!\n");
 	}
 }
 
 void Z12Preprocessor::Push(unsigned char c)
 {
-	// Detect end of message
-	
+	// Try to detect end of message:
 	// Is LineFeed?
 	if (c == 0x0A) {
 	
-
 		// Had CarriageReturn before?
 		if (_blnCR) {
 
-			printf("CRLF detected. Building a message...\n");
-		
 			// Build current message and flush list
 			_BuildMessage();
 			_listRaw.clear();
 
 			// Lower flag for next message
 			_blnCR = false;
+		
+			return;
 		}
-
-		// Probably broken message
-		printf("LF without CR detected, flushing ...\n");
-		_listRaw.clear();
 	}
 	else if (c == 0x0D) {
 	
-		printf("CR detected\n");
 		_blnCR = true;
 	}
 	else {
-
-		// Push into raw list
-		_listRaw.push_back(c);
+		// If we had CR and this is not LF, we lower flag
+		if (_blnCR)
+			_blnCR = false;
 	}
+
+	// Push into raw list
+	_listRaw.push_back(c);
 }
