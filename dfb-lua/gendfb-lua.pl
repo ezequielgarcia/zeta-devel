@@ -1,8 +1,15 @@
 #!/usr/bin/perl
 
-$whitelist{"IDirectFBSurface"} = true;
-$whitelist{"Clear"} = true;
-$whitelist{"Flip"} = true;
+$whitelist{"IDirectFB"} 		= true;
+$whitelist{"CreateSurface"}		= true;
+$whitelist{"IDirectFBSurface"} 	= true;
+$whitelist{"Clear"} 			= true;
+$whitelist{"Flip"} 				= true;
+$whitelist{"StretchBlit"}		= true;
+
+$gen_structs{"DFBRectangle"}			= true;
+$gen_structs{"DFBSurfaceDescription"}	= true;
+$gen_structs{"DFBRegion"}    			= true;
 
 $src_dir = "./gensrc/";
 
@@ -50,7 +57,22 @@ sub print_common_interface ($) {
 ###################
 
 # TODO: If no-one uses includes, throw it away :)
-sub src_create ($$$) {
+sub h_create ($$$) {
+	local ($FILE, $filename, $includes) = @_;
+
+	open( $FILE, ">${src_dir}$filename" )
+		or die ("*** Can not open '$filename' for writing:\n*** $!");
+
+	print $FILE "#ifndef $FILE\n",
+				"#define $FILE\n\n",
+				"#include \"lua.h\"\n", 
+				"#include \"lauxlib.h\"\n",
+				"#include \"directfb.h\"\n",
+				"\n",
+				"$includes\n";
+}
+
+sub c_create ($$$) {
 	local ($FILE, $filename, $includes) = @_;
 
 	open( $FILE, ">${src_dir}$filename" )
@@ -58,15 +80,19 @@ sub src_create ($$$) {
 
 	print $FILE "#include \"lua.h\"\n", 
 				"#include \"lauxlib.h\"\n",
-				"#include \"common.h\"\n",
 				"#include \"directfb.h\"\n",
 				"\n",
 				"$includes\n";
 }
 
-sub src_close ($) {
+sub h_close ($) {
 	local ($FILE) = @_;
-	print $FILE "\n";
+	print $FILE "\n#endif\n";
+	close( $FILE );
+}
+
+sub c_close ($) {
+	local ($FILE) = @_;
 	close( $FILE );
 }
 
@@ -119,11 +145,11 @@ sub parse_interface ($) {
 	trim( \$interface );
 
 	# DEBUG: ONLY
-	#return if (!($whitelist{$interface} eq true));
+	return if (!($whitelist{$interface} eq true));
 
 	print("> Creating ${interface}.c\n");
 
-	src_create( INTERFACE, "${interface}.c", "" );
+	c_create( INTERFACE, "${interface}.c", "#include \"common.h\"\n#include \"structs.h\"\n" );
 
 	local @funcs;
 
@@ -134,10 +160,10 @@ sub parse_interface ($) {
 		if ( /^\s*\/\*\*\s*(.+)\s*\*\*\/\s*$/ ) {
 		}
 		elsif ( /^\s*(\w+)\s*\(\s*\*\s*(\w+)\s*\)\s*\(?\s*$/ ) {
-			#next if (!($whitelist{$2} eq true));
+			next if (!($whitelist{$2} eq true));
 
 			local $function   = $2;
-			local $return_val = "0";
+			local $return_val = 0;
 
 			local @params = parse_params();
 			local $param;
@@ -148,7 +174,8 @@ sub parse_interface ($) {
 			local $pre_code;
 			local $post_code;
 
-			local $arg_num = 0;
+			# Arg number starts at 2 (Lua starts at 1 plus self interface which uses 1).
+			local $arg_num = 2;
 
 			for $param (@params) {
 				print "   - New parameter: $param->{NAME}, $param->{CONST}, $param->{TYPE}, $param->{PTR} \n";
@@ -181,14 +208,9 @@ sub parse_interface ($) {
 						}
 						# struct input
 						elsif ($types{$param->{TYPE}}->{KIND} eq "struct") {
-							$pre_code .= "     $param->{TYPE} *_$param->{NAME} = NULL;\n";
-							$pre_code .= "     $param->{TYPE} $param->{NAME};\n";
-							$pre_code .= "     if (args[$arg_num]->IsObject()) {\n";
-							$pre_code .= "          $param->{TYPE}_read( &$param->{NAME}, args[$arg_num] );\n";
-							$pre_code .= "          _$param->{NAME} = &$param->{NAME};\n";
-							$pre_code .= "     }\n";
-
-							$args .= ", _$param->{NAME}";
+							$pre_code .= "\t$param->{TYPE} $param->{NAME};\n";
+							$pre_code .= "\tfill_$param->{TYPE}(L, $arg_num, &$param->{NAME});\n";
+							$args .= ", &$param->{NAME}";
 						}
 						# array input?
 						else
@@ -226,9 +248,9 @@ sub parse_interface ($) {
 						}
 						# Interface input(!)
 						elsif ($types{$param->{TYPE}}->{KIND} eq "interface") {
-							$pre_code .= "     $param->{TYPE} *$param->{NAME} = V8_DIRECTFB_INTERFACE( args[$arg_num]->ToObject(), $param->{TYPE} );\n";
-
-							$args .= ", $param->{NAME}";
+							$pre_code .= "\t$param->{TYPE} **$param->{NAME} = ";
+							$pre_code .= "check_$param->{TYPE}(L, $arg_num);\n";
+							$args .= ", *$param->{NAME}";
 						}
 						# enum? output
 						else {
@@ -269,11 +291,9 @@ sub parse_interface ($) {
 						}
 						# output (return interface)
 						else {
-							$pre_code .= "     $param->{TYPE} *$param->{NAME};\n";
-
-							$post_code .= "     v8::Handle<v8::ObjectTemplate> templ = $param->{TYPE}_template();\n";
-
-							$return_val = "Construct( templ, $param->{NAME} )";
+							$pre_code .= "\t$param->{TYPE} *$param->{NAME};\n";
+							$post_code .= "\tpush_$param->{TYPE}(L, $param->{NAME});\n";
+							$return_val++;
 						}
 					}
 
@@ -325,11 +345,10 @@ sub parse_interface ($) {
 					"\treturn 1;\n",
 					"}\n";
 
-	src_close( INTERFACE );
+	c_close( INTERFACE );
 }
 
 # Reads stdin until the end of the enum is reached.
-# Writes formatted HTML to "types.cc".
 #
 sub parse_enum {
 	local @entries;
@@ -346,8 +365,6 @@ sub parse_enum {
 		# entry with assignment (opening comment)
 		elsif ( /^\s*(\w+)\s*=\s*([\w\d\(\)\,\|\!\s]+[^\,\s])\s*,?\s*\/\*\s*(.+)\s*$/ ) {
 			$entry = $1;
-
-			parse_comment( \$t1, \$t2, \$opt, $3 );
 		}
 		# entry with assignment (none or preceding comment)
 		elsif ( /^\s*(\w+)\s*=\s*([\w\d\(\)\,\|\!\s]+[^\,\s])\s*,?\s*$/ ) {
@@ -360,8 +377,6 @@ sub parse_enum {
 		# entry without assignment (opening comment)
 		elsif ( /^\s*(\w+)\s*,?\s*\/\*\s*(.+)\s*$/ ) {
 			$entry = $1;
-
-			parse_comment( \$t1, \$t2, \$opt, $2 );
 		}
 		# entry without assignment (none or preceding comment)
 		elsif ( /^\s*(\w+)\s*,?\s*$/ ) {
@@ -372,12 +387,10 @@ sub parse_enum {
 		}
 		# preceding comment (opening)
 		elsif ( /^\s*\/\*\s*(.+)\s*$/ ) {
-			parse_comment( \$t1, \$t2, \$opt, $1 );
 		}
 		# end of enum
 		elsif ( /^\s*\}\s*(\w+)\s*\;\s*$/ ) {
 			$enum = $1;
-
 			last;
 		}
 		# blank line?
@@ -385,8 +398,7 @@ sub parse_enum {
 		}
 
 		if ($entry ne "") {
-			print DIRECTFB_V8_CC "          obj->Set( v8::String::NewSymbol(\"$entry\"), v8::Integer::New($entry) );\n";
-
+			print "New enum symbol: $entry\n";
 			push (@entries, $entry);
 		}
 	}
@@ -396,8 +408,6 @@ sub parse_enum {
 		KIND    => "enum",
 		ENTRIES => @entries
 	};
-
-	print TEMPLATES_H "extern v8::Handle<v8::ObjectTemplate> ${enum}_template();\n";
 }
 
 # Reads stdin until the end of the enum is reached.
@@ -433,8 +443,6 @@ sub parse_struct {
 			$type = $2;
 			$ptr = $3;
 			$entry = $4.$5;
-
-			parse_comment( \$t1, \$t2, \$opt, $6 );
 
 			$text = $t1.$t2;
 		}
@@ -474,55 +482,64 @@ sub parse_struct {
 		ENTRIES => @entries
 	};
 
-	# header
-	print TEMPLATES_H "extern v8::Handle<v8::Object> ${struct}_construct( const ${struct} *src );\n";
-	print TEMPLATES_H "extern void ${struct}_read( ${struct} *dst, v8::Handle<v8::Value> src );\n";
+	print "New struct: $struct\n";
 
-	# _construct
-	print TEMPLATES_CC "\n",
-		  "v8::Handle<v8::Object>\n",
-		  "${struct}_construct( const ${struct} *src )\n",
-		  "{\n",
-		  "     v8::Handle<v8::Object> obj = v8::Object::New();\n",
-		  "\n";
+#	# header
+#	print TEMPLATES_H "extern v8::Handle<v8::Object> ${struct}_construct( const ${struct} *src );\n";
+#	print TEMPLATES_H "extern void ${struct}_read( ${struct} *dst, v8::Handle<v8::Value> src );\n";
+#
+#	# _construct
+#	print TEMPLATES_CC "\n",
+#		  "v8::Handle<v8::Object>\n",
+#		  "${struct}_construct( const ${struct} *src )\n",
+#		  "{\n",
+#		  "     v8::Handle<v8::Object> obj = v8::Object::New();\n",
+#		  "\n";
+#
+#	if ($gen_structs{$struct}) {
+#		foreach $entry (@entries) {
+#			if ($types{$entry->{TYPE}}->{KIND} eq "struct") {
+#				print TEMPLATES_CC "     obj->Set( v8::String::NewSymbol( \"$entry->{NAME}\" ), $entry->{TYPE}_construct( &src->$entry->{NAME} ) );\n";
+#			}
+#			else {
+#				print TEMPLATES_CC "     obj->Set( v8::String::NewSymbol( \"$entry->{NAME}\" ), v8::Integer::New(src->$entry->{NAME}) );\n";
+#			}
+#		}
+#	}
+#
+#	print TEMPLATES_CC "\n";
+#	print TEMPLATES_CC "     return obj;\n";
+#	print TEMPLATES_CC "}\n";
 
 	if ($gen_structs{$struct}) {
-		foreach $entry (@entries) {
-			if ($types{$entry->{TYPE}}->{KIND} eq "struct") {
-				print TEMPLATES_CC "     obj->Set( v8::String::NewSymbol( \"$entry->{NAME}\" ), $entry->{TYPE}_construct( &src->$entry->{NAME} ) );\n";
-			}
-			else {
-				print TEMPLATES_CC "     obj->Set( v8::String::NewSymbol( \"$entry->{NAME}\" ), v8::Integer::New(src->$entry->{NAME}) );\n";
-			}
-		}
-	}
-
-	print TEMPLATES_CC "\n";
-	print TEMPLATES_CC "     return obj;\n";
-	print TEMPLATES_CC "}\n";
-
+		print STRUCTS_H "DLL_LOCAL void fill_${struct} (lua_State *L, int index, ${struct} *dst);\n";
+		print STRUCTS_C "DLL_LOCAL void fill_${struct} (lua_State *L, int index, ${struct} *dst)\n",
+						"{\n",
+						"\tluaL_checktype(L, index, LUA_TTABLE);\n",
+		  				"\tmemset(dst, 0, sizeof(${struct}));\n";
 	# _read
-	print TEMPLATES_CC "\n",
-		  "void\n",
-		  "${struct}_read( ${struct} *dst, v8::Handle<v8::Value> src )\n",
-		  "{\n",
-		  "     if (src.IsEmpty()) { memset( dst, 0, sizeof(${struct}) ); return; }\n",
-		  "\n",
-		  "     v8::Handle<v8::Object> obj = src->ToObject();\n",
-		  "\n";
+#	print STRUCTS_C "\n",
+#		  "void\n",
+#		  "${struct}_read( ${struct} *dst, v8::Handle<v8::Value> src )\n",
+#		  "{\n",
+#		  "     if (src.IsEmpty()) { memset( dst, 0, sizeof(${struct}) ); return; }\n",
+#		  "\n",
+#		  "     v8::Handle<v8::Object> obj = src->ToObject();\n",
+#		  "\n";
 
-	if ($gen_structs{$struct}) {
 		foreach $entry (@entries) {
 			if ($types{$entry->{TYPE}}->{KIND} eq "struct") {
-				print TEMPLATES_CC "     $entry->{TYPE}_read( &dst->$entry->{NAME}, obj->Get( v8::String::NewSymbol(\"$entry->{NAME}\") )->ToObject() );\n";
+				print STRUCTS_C "\n\tfill_$entry->{TYPE}(L, ?, &dst->$entry->{NAME});\n";
 			}
 			else {
-				print TEMPLATES_CC "     dst->$entry->{NAME} = ($entry->{TYPE}) obj->Get( v8::String::NewSymbol(\"$entry->{NAME}\") )->IntegerValue();\n";
+				print STRUCTS_C "\n\tlua_getfield(L, index, \"$entry->{NAME}\");\n";
+				print STRUCTS_C "\tdst->$entry->{NAME} = lua_tonumber(L, -1);\n";
+				print STRUCTS_C "\tlua_pop(L, 1);\n";
 			}
 		}
-	}
 
-	print TEMPLATES_CC "}\n";
+		print STRUCTS_C "}\n\n";
+	}
 }
 
 #
@@ -567,9 +584,6 @@ sub parse_func ($$) {
 			$type = $2;
 			$ptr = $3;
 			$entry = $4.$5;
-
-			parse_comment( \$t1, \$t2, \$opt, $6 );
-
 			$text = $t1.$t2;
 		}
 		elsif ( /^\s*\)\;\s*$/ ) {
@@ -594,12 +608,12 @@ sub parse_func ($$) {
 ## Main ##
 ##########
 
-src_create( COMMON_H, "common.h", "" );
-src_create( COMMON_C, "common.c", "" );
+h_create( COMMON_H, "common.h", "" );
+c_create( COMMON_C, "common.c", "#include \"common.h\"\n" );
 
-print COMMON_H "#ifndef _CORE_H_\n";
-print COMMON_H "#define _CORE_H_\n\n";
-print COMMON_H "#include \"directfb.h\"\n\n";
+h_create( STRUCTS_H, "structs.h", "" );
+c_create( STRUCTS_C, "structs.c", "#include \"common.h\"\n" );
+
 print COMMON_H "#if defined(__GNUC__) && __GNUC__ >= 4\n";
 print COMMON_H "\t#define DLL_EXPORT __attribute__((visibility(\"default\")))\n";
 print COMMON_H "\t#define DLL_LOCAL	__attribute__((visibility(\"hidden\")))\n";
@@ -619,6 +633,8 @@ while (<>) {
 
 		print("New interface declaration: $interface\n");
 
+		next if (!($whitelist{$interface} eq true));
+		
 		print_common_interface($interface);
 
 		if (!defined ($types{$interface})) {
@@ -633,13 +649,13 @@ while (<>) {
 		parse_interface( $1 );
 	}
 	elsif ( /^\s*typedef\s+enum\s*\{?\s*$/ ) {
-#		parse_enum();
+		parse_enum();
 	}
 	elsif ( /^\s*typedef\s+(struct|union)\s*\{?\s*$/ ) {
-#		parse_struct();
+		parse_struct();
 	}
 	elsif ( /^\s*typedef\s+(\w+)\s+\(\*(\w+)\)\s*\(\s*$/ ) {
-#		parse_func( $1, $2 );
+		parse_func( $1, $2 );
 	}
 	elsif ( /^\s*#define\s+([^\(\s]+)(\([^\)]*\))?\s*(.*)/ ) {
 #		parse_macro( $1, $2, $3 );
@@ -653,3 +669,9 @@ while (<>) {
 		%options  = ();
 	}
 }
+
+h_close( COMMON_H );
+c_close( COMMON_C );
+
+h_close( STRUCTS_H );
+c_close( STRUCTS_C );
