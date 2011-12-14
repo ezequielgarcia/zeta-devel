@@ -1,7 +1,10 @@
-CFLAGS=-Wall -fPIC -I/usr/include/lua5.1 -I/usr/include/directfb
-LDFLAGS=-shared -llua -ldirect -ldirectfb -lfusion
+DFB_HEADER := $(shell pkg-config --variable=includedir directfb)/directfb/directfb.h
 
-SRC=src/core.c src/directfb.c src/surface.c
+CFLAGS := -Wall -fPIC $(shell pkg-config --cflags directfb lua)
+LDFLAGS := -shared $(shell pkg-config --libs directfb lua)
+
+SRC_DIR := src/
+SRC := $(wildcard $(SRC_DIR)*.c)
 
 OUTPUT=directfb.so
 
@@ -11,3 +14,7 @@ $(OUTPUT): $(SRC)
 .PHONY: clean
 clean:
 	rm -f *.so
+
+.PHONY: gen
+gen:
+	cat $(DFB_HEADER) | ./gendfb-lua.pl
