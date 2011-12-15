@@ -8,13 +8,16 @@ SRC := $(wildcard $(SRC_DIR)*.c)
 
 OUTPUT=directfb.so
 
-$(OUTPUT): $(SRC)
+$(OUTPUT): $(SRC) .gen.stamp
 	gcc $(CFLAGS) $(SRC) $(LDFLAGS) -o $@ 
+
+.gen.stamp: gendfb-lua.pl
+	cat $(DFB_HEADER) | ./gendfb-lua.pl || exit 1
+	touch .gen.stamp
 
 .PHONY: clean
 clean:
-	rm -f *.so
+	rm -f *.so $(SRC_DIR)* .gen.stamp
 
 .PHONY: gen
-gen:
-	cat $(DFB_HEADER) | ./gendfb-lua.pl
+gen: .gen.stamp

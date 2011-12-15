@@ -1,18 +1,72 @@
 #!/usr/bin/perl
 
-$whitelist{"IDirectFB"} 		= true;
-$whitelist{"CreateSurface"}		= true;
-$whitelist{"SetCooperativeLevel"} = true;
-$whitelist{"IDirectFBSurface"} 	= true;
-$whitelist{"Clear"} 			= true;
-$whitelist{"Flip"} 				= true;
-$whitelist{"FillRectangle"}		= true;
-$whitelist{"SetColor"}			= true;
-$whitelist{"StretchBlit"}		= true;
+# Interface blacklist
+$blacklist{"IDirectFBVideoProvider"}	= true;
+$blacklist{"IDirectFBDisplayLayer"} 	= true;
+$blacklist{"IDirectFBScreen"}			= true;
+$blacklist{"IDirectFBEventBuffer"}		= true;
+$blacklist{"IDirectFBInputDevice"}		= true;
+$blacklist{"IDirectFBPalette"}			= true;
+$blacklist{"IDirectFBGL"}				= true;
+	
+# Function blacklist
+$blacklist{"GetClipboardData"}			= true;
+$blacklist{"GetGL"}						= true;
+$blacklist{"Lock"}						= true;
+$blacklist{"GetProperty"}				= true;
+$blacklist{"RemoveProperty"}			= true;
+$blacklist{"GetStringBreak"}	 		= true;
+$blacklist{"SetStreamAttributes"} 		= true;
+$blacklist{"SetBufferThresholds"} 		= true;
+$blacklist{"SetClipboardData"}	 		= true;
+$blacklist{"GetClipboardTimeStamp"}		= true;
+$blacklist{"Write"} 					= true;
+$blacklist{"PutData"} 					= true;
+$blacklist{"SetColors"}					= true;
+$blacklist{"TextureTriangles"}			= true;
+$blacklist{"SetIndexTranslation"}		= true;
+$blacklist{"SetMatrix"}					= true;
+$blacklist{"SetKeySelection"}			= true;
+$blacklist{"Read"}						= true;
+$blacklist{"GetInterface"}				= true;
+$blacklist{"EnumInputDevices"}			= true;
+$blacklist{"EnumDisplayLayers"}			= true;
+$blacklist{"EnumScreens"}				= true;
+$blacklist{"EnumVideoModes"}			= true;
+$blacklist{"SetProperty"} 				= true;
+$blacklist{"EnumEncodings"} 			= true;
+$blacklist{"SetRenderCallback"} 		= true;
+$blacklist{"PlayTo"}				 	= true;
+$blacklist{"GetData"} 					= true;
+$blacklist{"PeekData"} 					= true;
+$blacklist{"GetDeviceDescription"}		= true;
+$blacklist{"CreatePalette"}				= true;
+$blacklist{"CreateDataBuffer"}			= true;
+$blacklist{"CreateEventBuffer"}			= true;
+$blacklist{"DetachEventBuffer"}			= true;
+$blacklist{"AttachEventBuffer"}			= true;
+$blacklist{"SetSrcGeometry"}			= true;
+$blacklist{"SetDstGeometry"}			= true;
+$blacklist{"GetPalette"}				= true;
+$blacklist{"SetPalette"}				= true;
+$blacklist{"SetDstGeometry"}			= true;
+$blacklist{"GetDisplayLayer"}			= true;
+$blacklist{"GetScreen"}					= true;
+$blacklist{"GetInputDevice"}			= true;
+$blacklist{"CreateInputEventBuffer"}	= true;
+$blacklist{"CreateVideoProvider"}		= true;
 
-$gen_structs{"DFBRectangle"}			= true;
 $gen_structs{"DFBSurfaceDescription"}	= true;
+$gen_structs{"DFBWindowDescription"}	= true;
+$gen_structs{"DFBFontDescription"}		= true;
+$gen_structs{"DFBImageDescription"}		= true;
+$gen_structs{"DFBDisplayLayerDescription"} = true;
 $gen_structs{"DFBRegion"}    			= true;
+$gen_structs{"DFBColor"}    			= true;
+$gen_structs{"DFBRectangle"}   			= true;
+$gen_structs{"DFBPoint"}    			= true;
+$gen_structs{"DFBSpan"}					= true;
+$gen_structs{"DFBTriangle"}				= true;
 
 $src_dir = "./src/";
 
@@ -149,11 +203,6 @@ sub parse_interface ($) {
 
 	trim( \$interface );
 
-	# DEBUG: ONLY
-	return if (!($whitelist{$interface} eq true));
-
-#	print("> Creating ${interface}.c\n");
-
 	c_create( INTERFACE, "${interface}.c", "#include \"common.h\"\n#include \"structs.h\"\n" );
 
 	local @funcs;
@@ -165,15 +214,13 @@ sub parse_interface ($) {
 		if ( /^\s*\/\*\*\s*(.+)\s*\*\*\/\s*$/ ) {
 		}
 		elsif ( /^\s*(\w+)\s*\(\s*\*\s*(\w+)\s*\)\s*\(?\s*$/ ) {
-			next if (!($whitelist{$2} eq true));
+			next if ($blacklist{$2} eq true);
 
 			local $function   = $2;
 			local $return_val = 0;
 
 			local @params = parse_params();
 			local $param;
-
-#			print "  * New function: $function\n";
 
 			local $args;
 			local $declaration;
@@ -184,10 +231,6 @@ sub parse_interface ($) {
 			local $arg_num = 2;
 
 			for $param (@params) {
-#				print "   - New parameter: $param->{NAME}, $param->{CONST}, $param->{TYPE}, $param->{PTR} \n";
-
-				#$pre_code .= "\n";
-
 				# simple
 				if ($param->{PTR} eq "") {
 					$declaration .= "\t$param->{TYPE} $param->{NAME};\n";
@@ -200,21 +243,18 @@ sub parse_interface ($) {
 					if ($param->{CONST} eq "const") {
 						# "void" -> buffer input 
 						if ($param->{TYPE} eq "void") {
-							$pre_code .= "\t$param->{TYPE} *$param->{NAME};\n";
+							print "UNIMPLEMENTED: $interface\::$function: $param->{TYPE} $param->{PTR} $param->{NAME}\n";
 							$pre_code .= "\t#warning unimplemented (buffer input)\n";
-							$pre_code .= "\tD_UNIMPLEMENTED();\n";
-
-							$args .= ", $param->{NAME}";
+							$args .= ", NULL";
 						}
 						# "char" -> string input
 						elsif ($param->{TYPE} eq "char") {
 							$declaration .= "\tconst $param->{TYPE} *$param->{NAME};\n";
-							$pre_code .= "$param->{NAME} = luaL_checkstring(L, $arg_num);\n";
+							$pre_code .= "\t$param->{NAME} = luaL_checkstring(L, $arg_num);\n";
 							$args .= ", $param->{NAME}";
 						}
 						# struct input, must handle nil value
 						elsif ($types{$param->{TYPE}}->{KIND} eq "struct") {
-							
 							$declaration .= "\t$param->{TYPE} $param->{NAME}, *$param->{NAME}_p;\n";
 							$pre_code .= "\t$param->{NAME}_p = check_$param->{TYPE}(L, $arg_num, &$param->{NAME});\n";
 							$args .= ", $param->{NAME}_p";
@@ -222,11 +262,9 @@ sub parse_interface ($) {
 						# array input?
 						else
 						{
-							$pre_code .= "     $param->{TYPE} $param->{NAME};\n";
-							$pre_code .= "     #warning unimplemented (array input?)\n";
-							$pre_code .= "     D_UNIMPLEMENTED();\n";
-
-							$args .= ", &$param->{NAME}";
+							print "UNIMPLEMENTED: $interface\::$function: $param->{TYPE} $param->{PTR} $param->{NAME}\n";
+							$pre_code .= "\t#warning unimplemented (array input?)\n";
+							$args .= ", NULL";
 						}
 					}
 					
@@ -234,24 +272,16 @@ sub parse_interface ($) {
 					else {
 						# "void" -> just context pointer
 						if ($param->{TYPE} eq "void") {
-							$pre_code .= "     $param->{TYPE} *$param->{NAME};\n";
-							$pre_code .= "     #warning unimplemented (context pointer)\n";
-							$pre_code .= "     D_UNIMPLEMENTED();\n";
-
-							$args .= ", $param->{NAME}";
+							print "UNIMPLEMENTED: $interface\::$function: $param->{TYPE} $param->{PTR} $param->{NAME}\n";
+							$pre_code .= "\t#warning unimplemented (context pointer)\n";
+							$args .= ", NULL";
 						}
 						# struct output
 						elsif ($types{$param->{TYPE}}->{KIND} eq "struct") {
 							$declaration .= "\t$param->{TYPE} $param->{NAME};\n";
-
 							$args .= ", &$param->{NAME}";
-
-							if ($return_val eq "v8::Undefined()") {
-								$return_val = "$param->{TYPE}_construct( &$param->{NAME} )";
-							}
-							else {
-								$post_code .= "     #warning unimplemented (second output)\n";
-							}
+							$post_code .= "\tpush_$param->{TYPE}(L, &$param->{NAME});\n";
+							$return_val++;
 						}
 						# Interface input(!)
 						elsif ($types{$param->{TYPE}}->{KIND} eq "interface") {
@@ -262,15 +292,9 @@ sub parse_interface ($) {
 						# enum? output
 						else {
 							$declaration .= "\t$param->{TYPE} $param->{NAME};\n";
-
 							$args .= ", &$param->{NAME}";
-
-							if ($return_val eq "v8::Undefined()") {
-								$return_val = "v8::Integer::New( $param->{NAME} )";
-							}
-							else {
-								$post_code .= "     #warning unimplemented (second output)\n";
-							}
+							$post_code .= "\tlua_pushnumber(L, $param->{NAME});\n";
+							$return_val++;
 						}
 					}
 				}
@@ -278,23 +302,18 @@ sub parse_interface ($) {
 				elsif ($param->{PTR} eq "**") {
 					# input (pass array)
 					if ($param->{CONST} eq "const") {
-						$pre_code .= "     $param->{TYPE} *$param->{NAME};\n";
-						$pre_code .= "     #warning unimplemented (pointer array)\n";
-						$pre_code .= "     D_UNIMPLEMENTED();\n";
+						print "UNIMPLEMENTED: $interface\::$function: $param->{CONST} $param->{TYPE} $param->{PTR} $param->{NAME}\n";
 					}
 					# output (return interface)
 					else {
 						# "void" -> return buffer
 						if ($param->{TYPE} eq "void") {
-							$pre_code .= "     $param->{TYPE} *$param->{NAME};\n";
-							$pre_code .= "     #warning unimplemented (return pointer)\n";
-							$pre_code .= "     D_UNIMPLEMENTED();\n";
+							print "UNIMPLEMENTED: $interface\::$function: $param->{CONST} $param->{TYPE} $param->{PTR} $param->{NAME}\n";
+							$pre_code .= "\t#warning unimplemented (return pointer)\n";
 						}
 						# "char" -> return string
 						elsif ($param->{TYPE} eq "char") {
-							$pre_code .= "     $param->{TYPE} *$param->{NAME};\n";
-							$pre_code .= "     #warning unimplemented (return string)\n";
-							$pre_code .= "     D_UNIMPLEMENTED();\n";
+							print "UNIMPLEMENTED: $interface\::$function: $param->{CONST} $param->{TYPE} $param->{PTR} $param->{NAME}\n";
 						}
 						# output (return interface)
 						else {
@@ -315,18 +334,17 @@ sub parse_interface ($) {
 				$post_code = "\n".$post_code;
 			}
 
-			print INTERFACE "static int\n";
-			print INTERFACE "l_${interface}_${function} (lua_State *L)\n";
-			print INTERFACE "{\n";
-			print INTERFACE "\t${interface} **thiz;\n";
-			print INTERFACE "${declaration}\n";
-		   	print INTERFACE "\tthiz = check_${interface}(L, 1);\n";
-			print INTERFACE "${pre_code}\n";
-			print INTERFACE "\t(*thiz)->${function}( *thiz${args} );\n";
-			print INTERFACE "${post_code}\n";
-			print INTERFACE "\treturn ${return_val};\n";
-			print INTERFACE "}\n";
-			print INTERFACE "\n";
+			print INTERFACE "static int\n",
+							"l_${interface}_${function} (lua_State *L)\n",
+							"{\n",
+							"\t${interface} **thiz;\n",
+							"${declaration}\n",
+						   	"\tthiz = check_${interface}(L, 1);\n",
+							"${pre_code}\n",
+							"\t(*thiz)->${function}( *thiz${args} );\n",
+							"${post_code}\n",
+							"\treturn ${return_val};\n",
+							"}\n\n";
 
 			push( @funcs, {
 					NAME   => $function,
@@ -338,7 +356,15 @@ sub parse_interface ($) {
 		}
 	}
 
-	print INTERFACE "\n";
+	print INTERFACE "static int\n",
+					"l_${interface}_Release (lua_State *L)\n",
+					"{\n",
+					"\t${interface} **thiz;\n",
+					"\tthiz = check_${interface}(L, 1);\n",
+					"\t(*thiz)->Release( *thiz );\n",
+					"\treturn 0;\n",
+					"}\n",
+					"\n\n";
 
 	print INTERFACE "static const luaL_reg ${interface}_methods[] = {\n";
 
@@ -346,7 +372,8 @@ sub parse_interface ($) {
 		print INTERFACE "\t{\"$func->{NAME}\",l_${interface}_$func->{NAME}},\n";
 	}
 
-	print INTERFACE "\t{NULL, NULL}\n",
+	print INTERFACE "\t{\"Release\", l_${interface}_Release},\n",
+					"\t{NULL, NULL}\n",
 					"};\n\n";
 
 	print INTERFACE "DLL_LOCAL int open_${interface} (lua_State *L)\n",
@@ -440,7 +467,7 @@ sub parse_struct {
 		local $entry;
 
 		# without comment
-		if ( /^\s*(const )?\s*([\w ]+)\s+(\**)([\w\d\+\[\]]+)(\s*:\s*\d+)?;\s*$/ ) {
+		if ( /^\s*(const )?\s*([\w ]+)\s+(\**)([\w]+)[\[\w\]]*(\s*:\s*\d+)?;\s*$/ ) {
 			$const = $1;
 			$type = $2;
 			$ptr = $3;
@@ -448,7 +475,7 @@ sub parse_struct {
 			$text = "";
 		}
 		# complete one line entry
-		elsif ( /^\s*(const )?\s*([\w ]+)\s+(\**)([\w\d\+\[\]]+)(\s*:\s*\d+)?;\s*\/\*\s*(.+)\*\/\s*$/ ) {
+		elsif ( /^\s*(const )?\s*([\w ]+)\s+(\**)([\w]+)[\[\]\w]*(\s*:\s*\d+)?;\s*\/\*\s*(.+)\*\/\s*$/ ) {
 			$const = $1;
 			$type = $2;
 			$ptr = $3;
@@ -456,7 +483,7 @@ sub parse_struct {
 			$text = $6;
 		}
 		# with comment opening
-		elsif ( /^\s*(const )?\s*([\w ]+)\s+(\**)([\w\d\+\[\]]+)(\s*:\s*\d+)?;\s*\/\*\s*(.+)\s*$/ ) {
+		elsif ( /^\s*(const )?\s*([\w ]+)\s+(\**)([\w]+)[\[\w\]]*(\s*:\s*\d+)?;\s*\/\*\s*(.+)\s*$/ ) {
 			$const = $1;
 			$type = $2;
 			$ptr = $3;
@@ -485,6 +512,7 @@ sub parse_struct {
 		trim( \$type );
 
 		if ($entry ne "") {
+
 			push (@entries, {
 					NAME   => $entry,
 					CONST  => $const,
@@ -500,36 +528,22 @@ sub parse_struct {
 		ENTRIES => @entries
 	};
 
-#	print "New struct: $struct\n";
-
-#	# header
-#	print TEMPLATES_H "extern v8::Handle<v8::Object> ${struct}_construct( const ${struct} *src );\n";
-#	print TEMPLATES_H "extern void ${struct}_read( ${struct} *dst, v8::Handle<v8::Value> src );\n";
-#
-#	# _construct
-#	print TEMPLATES_CC "\n",
-#		  "v8::Handle<v8::Object>\n",
-#		  "${struct}_construct( const ${struct} *src )\n",
-#		  "{\n",
-#		  "     v8::Handle<v8::Object> obj = v8::Object::New();\n",
-#		  "\n";
-#
-#	if ($gen_structs{$struct}) {
-#		foreach $entry (@entries) {
-#			if ($types{$entry->{TYPE}}->{KIND} eq "struct") {
-#				print TEMPLATES_CC "     obj->Set( v8::String::NewSymbol( \"$entry->{NAME}\" ), $entry->{TYPE}_construct( &src->$entry->{NAME} ) );\n";
-#			}
-#			else {
-#				print TEMPLATES_CC "     obj->Set( v8::String::NewSymbol( \"$entry->{NAME}\" ), v8::Integer::New(src->$entry->{NAME}) );\n";
-#			}
-#		}
-#	}
-#
-#	print TEMPLATES_CC "\n";
-#	print TEMPLATES_CC "     return obj;\n";
-#	print TEMPLATES_CC "}\n";
-
 	if ($gen_structs{$struct}) {
+
+		# Struct push (return)
+		print STRUCTS_H "DLL_LOCAL void push_${struct} (lua_State *L, ${struct} *src);\n";
+		print STRUCTS_C "DLL_LOCAL void push_${struct} (lua_State *L, ${struct} *src)\n",
+						"{\n",
+						"\tlua_newtable(L);\n\n";
+		foreach $entry (@entries) {
+			print STRUCTS_C "\tlua_pushstring(L, \"$entry->{NAME}\");\n";
+			print STRUCTS_C "\tlua_pushnumber(L, src->$entry->{NAME});\n";
+			print STRUCTS_C "\tlua_settable(L, -3);\n";
+		}
+
+		print STRUCTS_C "}\n\n";
+
+		# Struct check (read)
 		print STRUCTS_H "DLL_LOCAL ${struct}* check_${struct} (lua_State *L, int index, ${struct} *dst);\n";
 		print STRUCTS_C "DLL_LOCAL ${struct}* check_${struct} (lua_State *L, int index, ${struct} *dst)\n",
 						"{\n",
@@ -537,19 +551,11 @@ sub parse_struct {
 						"\t\treturn NULL;\n\n",
 						"\tluaL_checktype(L, index, LUA_TTABLE);\n",
 		  				"\tmemset(dst, 0, sizeof(${struct}));\n";
-	# _read
-#	print STRUCTS_C "\n",
-#		  "void\n",
-#		  "${struct}_read( ${struct} *dst, v8::Handle<v8::Value> src )\n",
-#		  "{\n",
-#		  "     if (src.IsEmpty()) { memset( dst, 0, sizeof(${struct}) ); return; }\n",
-#		  "\n",
-#		  "     v8::Handle<v8::Object> obj = src->ToObject();\n",
-#		  "\n";
 
 		foreach $entry (@entries) {
 			if ($types{$entry->{TYPE}}->{KIND} eq "struct") {
-				print STRUCTS_C "\n\tcheck_$entry->{TYPE}(L, ?, &dst->$entry->{NAME});\n";
+				print "UNIMPLEMENTED: $entry->{TYPE} $entry->{NAME}\n";
+				print STRUCTS_C "\n\t#warning Unimplemented struct of struct: $entry->{TYPE} $entry->{NAME}\n";
 			}
 			else {
 				print STRUCTS_C "\n\tlua_getfield(L, index, \"$entry->{NAME}\");\n";
@@ -660,8 +666,8 @@ while (<>) {
 
 		trim( \$interface );
 
-		next if (!($whitelist{$interface} eq true));
-		
+		next if ($blacklist{$interface} eq true);
+
 		print_common_interface($interface);
 
 		if (!defined ($types{$interface})) {
@@ -672,6 +678,7 @@ while (<>) {
 		}
 	}
 	elsif ( /^\s*DEFINE_INTERFACE\s*\(\s*(\w+),\s*$/ ) {
+		next if ($blacklist{$1} eq true);
 		parse_interface( $1 );
 	}
 	elsif ( /^\s*typedef\s+enum\s*\{?\s*$/ ) {
