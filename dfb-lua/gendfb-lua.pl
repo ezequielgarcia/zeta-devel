@@ -2,17 +2,17 @@
 
 # Interface blacklist
 $blacklist{"IDirectFBVideoProvider"}	= true;
-$blacklist{"IDirectFBDisplayLayer"} 	= true;
-$blacklist{"IDirectFBScreen"}			= true;
 $blacklist{"IDirectFBEventBuffer"}		= true;
 $blacklist{"IDirectFBInputDevice"}		= true;
 $blacklist{"IDirectFBPalette"}			= true;
 $blacklist{"IDirectFBGL"}				= true;
+$blacklist{"IDirectFBScreen"}			= true;
 	
 # Function blacklist
 $blacklist{"GetClipboardData"}			= true;
 $blacklist{"GetGL"}						= true;
 $blacklist{"Lock"}						= true;
+$blacklist{"Unlock"}					= true;
 $blacklist{"GetProperty"}				= true;
 $blacklist{"RemoveProperty"}			= true;
 $blacklist{"GetStringBreak"}	 		= true;
@@ -50,23 +50,29 @@ $blacklist{"SetDstGeometry"}			= true;
 $blacklist{"GetPalette"}				= true;
 $blacklist{"SetPalette"}				= true;
 $blacklist{"SetDstGeometry"}			= true;
-$blacklist{"GetDisplayLayer"}			= true;
-$blacklist{"GetScreen"}					= true;
 $blacklist{"GetInputDevice"}			= true;
 $blacklist{"CreateInputEventBuffer"}	= true;
 $blacklist{"CreateVideoProvider"}		= true;
+$blacklist{"SendEvent"}					= true;
+$blacklist{"GetScreen"}					= true;
 
+$gen_structs{"DFBDisplayLayerSourceDescription"} = true;
+$gen_structs{"DFBDisplayLayerDescription"} = true;
+$gen_structs{"DFBDisplayLayerConfig"} 	= true;
+$gen_structs{"DFBColorAdjustment"}	 	= true;
 $gen_structs{"DFBSurfaceDescription"}	= true;
 $gen_structs{"DFBWindowDescription"}	= true;
 $gen_structs{"DFBFontDescription"}		= true;
 $gen_structs{"DFBImageDescription"}		= true;
-$gen_structs{"DFBDisplayLayerDescription"} = true;
+$gen_structs{"DFBScreenDescription"}	= true;
+$gen_structs{"DFBScreenMixerDescription"}	= true;
 $gen_structs{"DFBRegion"}    			= true;
 $gen_structs{"DFBColor"}    			= true;
 $gen_structs{"DFBRectangle"}   			= true;
 $gen_structs{"DFBPoint"}    			= true;
 $gen_structs{"DFBSpan"}					= true;
 $gen_structs{"DFBTriangle"}				= true;
+$gen_structs{"DFBDimension"}			= true;
 
 $src_dir = "./src/";
 
@@ -467,28 +473,30 @@ sub parse_struct {
 		local $entry;
 
 		# without comment
-		if ( /^\s*(const )?\s*([\w ]+)\s+(\**)([\w]+)[\[\w\]]*(\s*:\s*\d+)?;\s*$/ ) {
+		if ( /^\s*(const )?\s*([\w ]+)\s+(\**)([\w]+)([\[\w\]]+)*(\s*:\s*\d+)?;\s*$/ ) {
 			$const = $1;
 			$type = $2;
 			$ptr = $3;
-			$entry = $4.$5;
+			$entry = $4.$6;
+			$array = $5;
 			$text = "";
 		}
 		# complete one line entry
-		elsif ( /^\s*(const )?\s*([\w ]+)\s+(\**)([\w]+)[\[\]\w]*(\s*:\s*\d+)?;\s*\/\*\s*(.+)\*\/\s*$/ ) {
+		elsif ( /^\s*(const )?\s*([\w ]+)\s+(\**)([\w]+)([\[\]\w]+)*(\s*:\s*\d+)?;\s*\/\*\s*(.+)\*\/\s*$/ ) {
 			$const = $1;
 			$type = $2;
 			$ptr = $3;
-			$entry = $4.$5;
-			$text = $6;
+			$entry = $4.$6;
+			$array = $5;
+			$text = $7;
 		}
 		# with comment opening
-		elsif ( /^\s*(const )?\s*([\w ]+)\s+(\**)([\w]+)[\[\w\]]*(\s*:\s*\d+)?;\s*\/\*\s*(.+)\s*$/ ) {
+		elsif ( /^\s*(const )?\s*([\w ]+)\s+(\**)([\w]+)([\[\w\]]+)*(\s*:\s*\d+)?;\s*\/\*\s*(.+)\s*$/ ) {
 			$const = $1;
 			$type = $2;
 			$ptr = $3;
-			$entry = $4.$5;
-
+			$entry = $4.$6;
+			$array = $5;
 			$text = $t1.$t2;
 		}
 		# sub
@@ -517,7 +525,8 @@ sub parse_struct {
 					NAME   => $entry,
 					CONST  => $const,
 					TYPE   => $type,
-					PTR    => $ptr
+					PTR    => $ptr,
+					ARRAY  => $array
 					} );
 		}
 	}
@@ -536,8 +545,14 @@ sub parse_struct {
 						"{\n",
 						"\tlua_newtable(L);\n\n";
 		foreach $entry (@entries) {
+
 			print STRUCTS_C "\tlua_pushstring(L, \"$entry->{NAME}\");\n";
-			print STRUCTS_C "\tlua_pushnumber(L, src->$entry->{NAME});\n";
+			if ($entry->{ARRAY} ne "" and $entry->{TYPE} eq "char") {
+				print STRUCTS_C "\tlua_pushstring(L, src->$entry->{NAME});\n";
+			}
+			else {
+				print STRUCTS_C "\tlua_pushnumber(L, src->$entry->{NAME});\n";
+			}
 			print STRUCTS_C "\tlua_settable(L, -3);\n";
 		}
 
@@ -559,7 +574,13 @@ sub parse_struct {
 			}
 			else {
 				print STRUCTS_C "\n\tlua_getfield(L, index, \"$entry->{NAME}\");\n";
-				print STRUCTS_C "\tdst->$entry->{NAME} = lua_tonumber(L, -1);\n";
+				if ($entry->{ARRAY} ne "" and $entry->{TYPE} eq "char") {
+					# TODO: Do memcpy or strcpy into the char array.
+					#print STRUCTS_C "\tdst->$entry->{NAME} = lua_tonumber(L, -1);\n";
+				}
+				else {
+					print STRUCTS_C "\tdst->$entry->{NAME} = lua_tonumber(L, -1);\n";
+				}
 				print STRUCTS_C "\tlua_pop(L, 1);\n";
 			}
 		}

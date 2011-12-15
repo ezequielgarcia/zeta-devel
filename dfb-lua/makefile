@@ -8,7 +8,7 @@ SRC := $(wildcard $(SRC_DIR)*.c)
 
 OUTPUT=directfb.so
 
-$(OUTPUT): $(SRC) .gen.stamp
+$(OUTPUT): $(SRC) 
 	gcc $(CFLAGS) $(SRC) $(LDFLAGS) -o $@ 
 
 .gen.stamp: gendfb-lua.pl
